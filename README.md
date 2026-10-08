@@ -36,6 +36,17 @@ O Vite já escuta na rede. Rode no computador do professor e os alunos acessam
 `http://IP-DO-PROFESSOR:5173`. As chamadas `/api` passam pelo Vite até o backend, então não é preciso
 mexer em CORS.
 
+### Publicar na Vercel (só para apresentar)
+
+Na Vercel roda só o site. Sem o backend, ele entra sozinho em **modo demonstração**: a busca e as
+respostas são simuladas no navegador, com os mesmos passos do RAG de verdade. Cada visitante vê só os seus dados.
+
+1. Em vercel.com → **Add New → Project**, importe este repositório.
+2. Em **Root Directory**, escolha `frontend`. O preset Vite é detectado sozinho.
+3. Clique em **Deploy**.
+
+O botão **Demonstração em 1 clique** roda as três etapas com os exemplos prontos e abre a comparação.
+
 ## Como funciona
 
 - `frontend/`: React + Vite + Tailwind, com componentes do [unlumen UI](https://ui.unlumen.com)
