@@ -1,6 +1,11 @@
-# Oficina RAG
+# Educagente — Oficina RAG
 
-Plataforma da oficina "Inclusão Digital e Profissão em Ciência da Computação através do RAG Agêntico".
+Plataforma da oficina "Inclusão Digital e Profissão em Ciência da Computação através do RAG Agêntico"
+(projeto de extensão da UCDB, Campo Grande/MS). "Educagente" é o nome do projeto; "Oficina RAG" é o
+rótulo do fluxo fixo de 3 etapas dentro dela — a plataforma tem dois fluxos:
+
+### Oficina RAG (fluxo fixo, 3 etapas)
+
 O aluno faz a mesma pergunta em três etapas e compara as respostas:
 
 | Etapa | O que acontece |
@@ -12,6 +17,22 @@ O aluno faz a mesma pergunta em três etapas e compara as respostas:
 A tela **Comparar** cruza as respostas salvas das três etapas para a mesma pergunta.
 O **Painel do professor** mostra todas as respostas e exporta CSV para a pesquisa.
 
+### Projeto (fluxo livre, aba "Projeto")
+
+Modelo mais geral, com identidade visual própria "Pantanal" (ver `DESIGN.md`): o aluno cria até
+3 projetos, escreve um prompt de 5 campos (persona/contexto/instrução/restrição/formato de saída),
+sobe seus próprios documentos e compara **modelo puro** vs. **+prompt** vs. **+prompt+RAG** lado a
+lado. Cinco telas: Prompt → Conhecimento → Conversar → Comparar → Exportar (zip com config +
+documentos + exemplo do prompt final).
+
+Cada projeto escolhe um provedor de IA na criação (fica fixo depois):
+
+- **Ollama** — grátis, sem conta, usa o servidor Ollama compartilhado da turma.
+- **Anthropic** / **OpenAI** — BYOK (*bring your own key*): o aluno cola a própria chave na tela
+  **"Minha IA"** (botão no topo da área Projeto). A chave fica só no `localStorage` do navegador,
+  nunca é enviada ao nosso banco nem aparece em log — viaja só por requisição, direto pro provedor.
+  Um botão "Testar e salvar" valida a chave antes de guardá-la.
+
 ## Rodar
 
 ```bash
@@ -21,16 +42,19 @@ O **Painel do professor** mostra todas as respostas e exporta CSV para a pesquis
 Abre em http://localhost:5173. Na primeira vez ele cria o ambiente Python e instala as dependências.
 Na primeira pergunta com RAG, o modelo de embedding (`bge-m3`, via Ollama) é usado para indexar e buscar.
 
-Sem Ollama local nem `ANTHROPIC_API_KEY`, o site roda em **modo demonstração**: tudo funciona, mas no
-lugar da resposta da IA aparecem os trechos encontrados. Para usar a IA de verdade, configure
-`backend/.env` (veja `backend/.env.example`):
+Sem Ollama local nem `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`, o site roda em **modo demonstração**: tudo
+funciona, mas no lugar da resposta da IA aparecem os trechos encontrados. Para usar a IA de verdade
+na Oficina RAG (3 etapas), configure `backend/.env` (veja `backend/.env.example`):
 
 ```
-MODEL_PROVIDER=anthropic   # ou "ollama"
+MODEL_PROVIDER=anthropic   # ou "openai", ou "ollama"
 ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
 
-e reinicie. A chave fica só no servidor, nunca vai para o navegador.
+e reinicie. Essa chave do `.env` fica só no servidor e é o fallback de demonstração/turma — no fluxo
+"Projeto", cada aluno normalmente usa a própria chave, colada na tela "Minha IA" (ver acima), que
+nunca passa pelo `.env` nem pelo banco.
 
 ### Rodar com Docker
 
@@ -54,7 +78,9 @@ fora do container (ele não precisa de Docker).
    ```
 
 3. **Configure `backend/.env`** (copie de `backend/.env.example` se ainda não existir) e escolha o
-   provedor de chat (`MODEL_PROVIDER=ollama` ou `anthropic` + `ANTHROPIC_API_KEY`).
+   provedor de chat (`MODEL_PROVIDER=ollama`, `anthropic` + `ANTHROPIC_API_KEY`, ou `openai` +
+   `OPENAI_API_KEY`) — isso é só o fallback de demonstração/turma da Oficina RAG; no Projeto, cada
+   aluno normalmente usa a própria chave via "Minha IA".
 
 4. **Suba a API em container:**
    ```bash
@@ -100,19 +126,32 @@ O botão **Demonstração em 1 clique** roda as três etapas com os exemplos pro
 
 ## Como funciona
 
-- `frontend/`: React + Vite + Tailwind, com componentes do [unlumen UI](https://ui.unlumen.com)
-  (`src/components/unlumen-ui/`: ShimmeringText, GlowingBadge, ThemeSwitch, ShimmerSkeleton, CountUp, TextReveal).
-- `backend/main.py`: FastAPI, usando o núcleo em `backend/core/` (sem depender do FastAPI):
-  1. `POST /api/alunos/{id}/documentos` recebe um PDF ou TXT, extrai o texto por página
-     (`core/ingestion.py`), corta em trechos (`core/chunking.py`) e guarda no índice próprio da
-     etapa (`core/store.py`, JSONL + embedding `bge-m3` via Ollama). Reenviar substitui os dados.
-  2. `POST /api/alunos/{id}/perguntar` chama `core/engine.py::run()` — a função central do núcleo —
-     que busca os `TOP_K` trechos mais próximos (etapas 2 e 3, filtrados por `SIMILARITY_THRESHOLD`)
-     e chama a LLM configurada em `MODEL_PROVIDER` (`anthropic` ou `ollama`, via `core/llm.py`).
-     Na etapa 1 a chamada vai sem contexto.
-  3. A resposta é salva no SQLite (`backend/data/oficina.db`) com pergunta, etapa, aluno e os trechos usados.
+- `frontend/`: React + Vite + Tailwind.
+  - Início + Etapas (Oficina RAG): componentes do [unlumen UI](https://ui.unlumen.com)
+    (`src/components/unlumen-ui/`: ShimmeringText, GlowingBadge, ThemeSwitch, ShimmerSkeleton,
+    CountUp, TextReveal) e `src/components/slide.tsx`, `src/telas.tsx`.
+  - Projeto: identidade visual própria "Pantanal" (`src/pantanal.css`,
+    `src/components/pantanal.tsx`, `src/telasProjeto.tsx`) — ver `DESIGN.md` para paleta, tipografia
+    (Baloo 2 + IBM Plex Mono) e os componentes (ficha catalográfica, régua de similaridade, botão de
+    seleção animado). Nunca compartilha estilo com a Início/Etapas.
+- `backend/`: FastAPI, usando o núcleo em `backend/core/` (sem depender do FastAPI) — contrato
+  central `core/engine.py::run(config, index, question, use_prompt, use_rag, api_key=None)`.
+  - `backend/main.py`: endpoints da Oficina RAG (3 etapas fixas) + `/api/validar-chave` (testa uma
+    chave Anthropic/OpenAI sem persistir).
+  - `backend/projetos.py`: endpoints do modelo "Projeto" (criar/listar/atualizar projeto, upload de
+    documento, perguntar, comparar as 3 camadas, exportar zip) — reaproveita o mesmo `core/`.
+  - `backend/config.py` / `backend/db.py`: configuração e acesso ao SQLite compartilhados pelos dois.
+  - `core/llm.py`: adaptador plugável de chat — `OllamaAdapter`, `AnthropicAdapter`, `OpenAIAdapter`,
+    `DemoAdapter` — cada um aceita uma `api_key` opcional por chamada (BYOK) com fallback pro `.env`
+    do servidor.
+  - Fluxo de pergunta: `POST .../documentos` extrai texto por página (`core/ingestion.py`), corta em
+    trechos (`core/chunking.py`) e indexa (`core/store.py`, JSONL + embedding `bge-m3` via Ollama,
+    sempre local — não é afetado pela escolha de provedor de chat). `POST .../perguntar` busca os
+    `TOP_K` trechos mais próximos (filtrados por `SIMILARITY_THRESHOLD`) e chama a LLM configurada.
+    A resposta é salva no SQLite (`backend/data/oficina.db`) com pergunta, trechos usados e metadados.
 
 ## LGPD
 
 O aluno entra só com apelido e turma e precisa marcar o consentimento. Não há outros dados pessoais.
-Para zerar tudo, apague `backend/data/`.
+Para zerar tudo, apague `backend/data/`. A chave de IA (BYOK) que o aluno cola em "Minha IA" nunca é
+coletada pela plataforma — fica só no navegador dele.
