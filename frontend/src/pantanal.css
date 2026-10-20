@@ -1,0 +1,25 @@
+/* Identidade "Pantanal" — exclusiva da aba Projeto (ver DESIGN.md).
+   Nunca usada pela página Início nem pelas Etapas da Oficina RAG: por isso vive
+   num arquivo próprio, com tudo preso embaixo de `.pantanal`, em vez de entrar no
+   tema global de `index.css`. */
+
+.pantanal {
+  --cor-primaria: #173328;
+  --cor-texto: #14211b;
+  --cor-fundo: #f4efe4;
+  --cor-conhecimento: #e8b931;
+  --cor-prompt: #3e7c82;
+  --cor-acao-futura: #b5643c;
+  --cor-alerta: #c8402f;
+
+  --pantanal-raio: 4px;
+  --pantanal-borda: 1.5px;
+
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.pantanal .font-maquina {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}

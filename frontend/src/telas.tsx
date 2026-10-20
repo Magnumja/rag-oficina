@@ -20,7 +20,19 @@ import { api, type Etapa, type GrupoComparacao, type Resposta } from '@/lib/api'
 import { COR, ETAPAS, EXEMPLO_JSON, PERGUNTAS_SUGERIDAS, PROMPT_GPT } from '@/lib/conteudo'
 import { cn } from '@/lib/utils'
 
-export type Tela = 'inicio' | 'etapa1' | 'etapa2' | 'etapa3' | 'comparar' | 'pesquisa'
+export type Tela =
+  | 'inicio'
+  | 'etapa1'
+  | 'etapa2'
+  | 'etapa3'
+  | 'comparar'
+  | 'pesquisa'
+  | 'projeto-lista'
+  | 'projeto-prompt'
+  | 'projeto-conhecimento'
+  | 'projeto-conversar'
+  | 'projeto-comparar'
+  | 'projeto-exportar'
 
 /** Roda as três etapas com os exemplos prontos e a mesma pergunta. */
 export async function rodarDemonstracao(progresso: (msg: string) => void) {

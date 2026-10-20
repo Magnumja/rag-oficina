@@ -10,6 +10,7 @@ import { detectar, type Etapa, type Status } from '@/lib/api'
 import { COR, ETAPAS, type Cor } from '@/lib/conteudo'
 import { cn } from '@/lib/utils'
 import { BotaoDemonstracao, Comparar, EtapaTela, Pesquisa, type Tela } from '@/telas'
+import { ProjetoArea, type TelaProjeto } from '@/telasProjeto'
 
 const NAV: { id: Tela; label: string }[] = [
   { id: 'inicio', label: 'Início' },
@@ -18,7 +19,17 @@ const NAV: { id: Tela; label: string }[] = [
   { id: 'etapa3', label: 'Etapa 3' },
   { id: 'comparar', label: 'Comparar' },
   { id: 'pesquisa', label: 'Pesquisa' },
+  { id: 'projeto-lista', label: 'Projeto' },
 ]
+
+const TELAS_PROJETO = new Set<Tela>([
+  'projeto-lista',
+  'projeto-prompt',
+  'projeto-conhecimento',
+  'projeto-conversar',
+  'projeto-comparar',
+  'projeto-exportar',
+])
 
 const EQUIPE = [
   'Bianca Sabka de Queiroz',
@@ -55,16 +66,17 @@ export default function App() {
           <nav className="-mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1">
             {NAV.map((n) => {
               const etapa = n.id.startsWith('etapa') ? (Number(n.id.slice(-1)) as Etapa) : null
+              const ativo = n.id === 'projeto-lista' ? TELAS_PROJETO.has(tela) : tela === n.id
               return (
                 <button
                   key={n.id}
                   onClick={() => irPara(n.id)}
                   className={cn(
                     'relative shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                    tela === n.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                    ativo ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
-                  {tela === n.id && (
+                  {ativo && (
                     <motion.span
                       layoutId="nav-pill"
                       className={cn('absolute inset-0 rounded-lg border-[1.5px] bg-card', etapa ? COR[ETAPAS[etapa].cor].borda : 'border-amarelo')}
@@ -107,6 +119,8 @@ export default function App() {
               <Comparar />
             ) : tela === 'pesquisa' ? (
               <Pesquisa />
+            ) : TELAS_PROJETO.has(tela) ? (
+              <ProjetoArea tela={tela as TelaProjeto} irPara={irPara} />
             ) : (
               <EtapaTela key={tela} etapa={Number(tela.slice(-1)) as Etapa} irPara={irPara} />
             )}
