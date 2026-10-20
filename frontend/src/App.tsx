@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ChevronDown } from 'lucide-react'
 import { CountUp } from '@/components/unlumen-ui/count-up'
 import { GlowingBadge } from '@/components/unlumen-ui/glowing-badge'
 import { TextReveal } from '@/components/unlumen-ui/text-reveal'
@@ -12,15 +12,16 @@ import { cn } from '@/lib/utils'
 import { BotaoDemonstracao, Comparar, EtapaTela, Pesquisa, type Tela } from '@/telas'
 import { ProjetoArea, type TelaProjeto } from '@/telasProjeto'
 
-const NAV: { id: Tela; label: string }[] = [
-  { id: 'inicio', label: 'Início' },
-  { id: 'etapa1', label: 'Etapa 1' },
-  { id: 'etapa2', label: 'Etapa 2' },
-  { id: 'etapa3', label: 'Etapa 3' },
-  { id: 'comparar', label: 'Comparar' },
-  { id: 'pesquisa', label: 'Pesquisa' },
-  { id: 'projeto-lista', label: 'Projeto' },
+/** Etapa 1-3 + Comparar + Pesquisa viviam soltas na barra (5 botões); agrupadas
+ * num só menu "Oficina RAG" pra barra não ficar apertada com a aba Projeto. */
+const OFICINA_SUBNAV: { id: Tela; label: string; etapa: Etapa | null }[] = [
+  { id: 'etapa1', label: 'Etapa 1 · IA sem RAG', etapa: 1 },
+  { id: 'etapa2', label: 'Etapa 2 · dados errados', etapa: 2 },
+  { id: 'etapa3', label: 'Etapa 3 · dados corretos', etapa: 3 },
+  { id: 'comparar', label: 'Comparar', etapa: null },
+  { id: 'pesquisa', label: 'Pesquisa (professor)', etapa: null },
 ]
+const TELAS_OFICINA = new Set<Tela>(OFICINA_SUBNAV.map((n) => n.id))
 
 const TELAS_PROJETO = new Set<Tela>([
   'projeto-lista',
@@ -42,15 +43,28 @@ const EQUIPE = [
 export default function App() {
   const [tela, setTela] = useState<Tela>('inicio')
   const [status, setStatus] = useState<Status | null>(null)
+  const [oficinaAberta, setOficinaAberta] = useState(false)
+  const oficinaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     detectar().then(setStatus)
   }, [])
 
+  useEffect(() => {
+    function aoClicarFora(e: MouseEvent) {
+      if (oficinaRef.current && !oficinaRef.current.contains(e.target as Node)) setOficinaAberta(false)
+    }
+    document.addEventListener('mousedown', aoClicarFora)
+    return () => document.removeEventListener('mousedown', aoClicarFora)
+  }, [])
+
   function irPara(t: Tela) {
     setTela(t)
+    setOficinaAberta(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  const oficinaAtiva = TELAS_OFICINA.has(tela)
 
   return (
     <div className="relative flex min-h-dvh flex-col">
@@ -60,33 +74,61 @@ export default function App() {
           <button onClick={() => irPara('inicio')} className="flex shrink-0 items-center gap-2" aria-label="Início">
             <Logo />
             <span className="hidden font-titulo text-sm font-extrabold uppercase tracking-tight lg:inline">
-              Oficina <span className="text-azul">RAG</span>
+              Educagente
             </span>
           </button>
-          <nav className="-mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1">
-            {NAV.map((n) => {
-              const etapa = n.id.startsWith('etapa') ? (Number(n.id.slice(-1)) as Etapa) : null
-              const ativo = n.id === 'projeto-lista' ? TELAS_PROJETO.has(tela) : tela === n.id
-              return (
-                <button
-                  key={n.id}
-                  onClick={() => irPara(n.id)}
-                  className={cn(
-                    'relative shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                    ativo ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {ativo && (
-                    <motion.span
-                      layoutId="nav-pill"
-                      className={cn('absolute inset-0 rounded-lg border-[1.5px] bg-card', etapa ? COR[ETAPAS[etapa].cor].borda : 'border-amarelo')}
-                      transition={{ type: 'spring', bounce: 0.2, duration: 0.45 }}
-                    />
-                  )}
-                  <span className="relative">{n.label}</span>
-                </button>
-              )
-            })}
+          <nav className="-mx-1 flex flex-1 items-center gap-0.5 px-1">
+            <NavBotao label="Início" ativo={tela === 'inicio'} onClick={() => irPara('inicio')} />
+
+            <div ref={oficinaRef} className="relative shrink-0">
+              <button
+                onClick={() => setOficinaAberta((a) => !a)}
+                className={cn(
+                  'relative flex shrink-0 items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                  oficinaAtiva ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {oficinaAtiva && (
+                  <motion.span
+                    layoutId="nav-pill"
+                    className={cn(
+                      'absolute inset-0 rounded-lg border-[1.5px] bg-card',
+                      tela.startsWith('etapa') ? COR[ETAPAS[Number(tela.slice(-1)) as Etapa].cor].borda : 'border-amarelo',
+                    )}
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.45 }}
+                  />
+                )}
+                <span className="relative">Oficina RAG</span>
+                <ChevronDown className={cn('relative size-3.5 transition-transform', oficinaAberta && 'rotate-180')} />
+              </button>
+              <AnimatePresence>
+                {oficinaAberta && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 top-full z-40 mt-1.5 w-56 rounded-xl border bg-card p-1.5 shadow-lg"
+                  >
+                    {OFICINA_SUBNAV.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => irPara(n.id)}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                          tela === n.id ? 'bg-accent font-semibold' : 'hover:bg-accent',
+                        )}
+                      >
+                        {n.etapa && <span className={cn('size-1.5 shrink-0 rounded-full', COR[ETAPAS[n.etapa].cor].fundo)} />}
+                        {n.label}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <NavBotao label="Projeto" ativo={TELAS_PROJETO.has(tela)} onClick={() => irPara('projeto-lista')} />
           </nav>
           <div className="hidden md:block">
             {status?.modo === 'demo' && (
@@ -392,5 +434,27 @@ function Logo() {
     <span className="flex size-8 items-center justify-center rounded-lg border-[1.5px] border-amarelo bg-card font-mono text-sm font-bold text-amarelo">
       {'{}'}
     </span>
+  )
+}
+
+/** Item simples da navegação principal (sem etapa/cor própria — Início e Projeto). */
+function NavBotao({ label, ativo, onClick }: { label: string; ativo: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'relative shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+        ativo ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {ativo && (
+        <motion.span
+          layoutId="nav-pill"
+          className="absolute inset-0 rounded-lg border-[1.5px] border-amarelo bg-card"
+          transition={{ type: 'spring', bounce: 0.2, duration: 0.45 }}
+        />
+      )}
+      <span className="relative">{label}</span>
+    </button>
   )
 }
