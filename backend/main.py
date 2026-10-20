@@ -1,6 +1,7 @@
-"""Backend da oficina RAG: recebe o JSON do aluno, indexa no Chroma e responde perguntas.
+"""Backend da oficina RAG: recebe documentos (PDF/TXT), indexa no núcleo próprio e responde
+perguntas.
 
-Etapa 1 = LLM sem contexto. Etapa 2 = RAG com dados errados. Etapa 3 = RAG com dados corretos.
+Etapa 1 = LLM sem RAG. Etapa 2 = RAG com documento "errado". Etapa 3 = RAG com documento real.
 """
 
 import csv
@@ -11,14 +12,18 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-import chromadb
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from core.chunking import chunk_text
+from core.engine import run as engine_run
+from core.ingestion import extrair_paginas
+from core.schema import PromptConfig, ProjectConfig, RetrievalConfig
+from core.store import ProjectIndex
 
 BASE = Path(__file__).parent
 load_dotenv(BASE / ".env")
@@ -26,20 +31,22 @@ load_dotenv(BASE / ".env")
 DATA = BASE / "data"
 DATA.mkdir(exist_ok=True)
 DB_PATH = DATA / "oficina.db"
-MODEL = os.getenv("LLM_MODEL", "claude-haiku-5-5")
-TOP_K = int(os.getenv("TOP_K", "4"))
 
-chroma = chromadb.PersistentClient(path=str(DATA / "chroma"))
+MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "anthropic")
+MODEL = os.getenv("LLM_MODEL", "llama3.2:1b" if MODEL_PROVIDER == "ollama" else "claude-haiku-5-5")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "bge-m3")
+TOP_K = int(os.getenv("TOP_K", "4"))
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
 
 SYSTEM_LIVRE = (
     "Você é um assistente conversando com estudantes do Ensino Médio. Responda em português, "
     "de forma curta e direta."
 )
-SYSTEM_RAG = (
+SYSTEM_RAG_INSTRUCAO = (
     "Você é um assistente conversando com estudantes do Ensino Médio. Responda em português, "
-    "de forma curta e direta, usando SOMENTE as informações dos trechos abaixo. "
-    "Cite o número do trecho entre colchetes, por exemplo [1]. "
-    "Se os trechos não tiverem a resposta, diga que não encontrou nos dados.\n\nTrechos:\n{contexto}"
+    "de forma curta e direta, usando SOMENTE as informações dos trechos da base de "
+    "conhecimento abaixo. Cite o número do trecho entre colchetes, por exemplo [1]. "
+    "Se os trechos não tiverem a resposta, diga que não encontrou nos dados."
 )
 
 
@@ -89,68 +96,18 @@ def get_aluno(aluno_id: int) -> sqlite3.Row:
 
 # ---------- RAG ----------
 
-def nome_colecao(aluno_id: int, etapa: int) -> str:
-    return f"aluno{aluno_id}_etapa{etapa}"
+def caminho_indice(aluno_id: int, etapa: int) -> Path:
+    return DATA / "indices" / f"aluno{aluno_id}_etapa{etapa}.jsonl"
 
 
-def json_para_trechos(dado: Any, caminho: str = "") -> list[str]:
-    """Achata qualquer JSON em trechos de texto legíveis.
-
-    Cada objeto vira um trecho com seus valores simples. Assim funciona com o formato
-    sugerido e também com o que o GPT inventar.
-    """
-    if isinstance(dado, dict):
-        simples = {k: v for k, v in dado.items() if not isinstance(v, (dict, list))}
-        compostos = {k: v for k, v in dado.items() if isinstance(v, (dict, list))}
-        trechos = []
-        if simples:
-            linhas = [f"{k}: {v}" for k, v in simples.items()]
-            trechos.append((f"[{caminho}] " if caminho else "") + "; ".join(linhas))
-        for k, v in compostos.items():
-            trechos += json_para_trechos(v, f"{caminho} > {k}" if caminho else k)
-        return trechos
-    if isinstance(dado, list):
-        trechos = []
-        for i, item in enumerate(dado, 1):
-            trechos += json_para_trechos(item, f"{caminho} #{i}" if caminho else f"#{i}")
-        return trechos
-    return [f"{caminho}: {dado}" if caminho else str(dado)]
+def obter_indice(aluno_id: int, etapa: int) -> ProjectIndex:
+    indice = ProjectIndex(caminho_indice(aluno_id, etapa), embedding_model=EMBEDDING_MODEL)
+    indice.load()
+    return indice
 
 
-def dividir(texto: str, tamanho: int = 600) -> list[str]:
-    """Quebra trechos longos em pedaços de até `tamanho` caracteres, respeitando palavras."""
-    if len(texto) <= tamanho:
-        return [texto]
-    partes, atual = [], ""
-    for palavra in texto.split():
-        if atual and len(atual) + len(palavra) + 1 > tamanho:
-            partes.append(atual)
-            atual = palavra
-        else:
-            atual = f"{atual} {palavra}".strip()
-    if atual:
-        partes.append(atual)
-    return partes
-
-
-def chamar_llm(system: str, pergunta: str) -> str:
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        # Modo demonstração: permite testar o fluxo inteiro sem chave e sem custo.
-        aviso = "[modo demonstração: configure ANTHROPIC_API_KEY em backend/.env]\n"
-        if "Trechos:\n" in system:
-            return aviso + "Encontrei estes dados:\n" + system.split("Trechos:\n", 1)[1][:600]
-        return aviso + "Não sei o que deu de aula ontem. Você pode me contar?"
-
-    import anthropic
-
-    client = anthropic.Anthropic()
-    msg = client.messages.create(
-        model=MODEL,
-        max_tokens=600,
-        system=system,
-        messages=[{"role": "user", "content": pergunta}],
-    )
-    return "".join(b.text for b in msg.content if b.type == "text")
+def contar_trechos(aluno_id: int, etapa: int) -> int:
+    return obter_indice(aluno_id, etapa).count()
 
 
 # ---------- API ----------
@@ -170,11 +127,6 @@ class NovoAluno(BaseModel):
     consentimento: bool
 
 
-class Documento(BaseModel):
-    etapa: int = Field(ge=2, le=3)
-    json_texto: str = Field(min_length=2, max_length=200_000)
-
-
 class Pergunta(BaseModel):
     etapa: int = Field(ge=1, le=3)
     pergunta: str = Field(min_length=1, max_length=1000)
@@ -182,7 +134,15 @@ class Pergunta(BaseModel):
 
 @app.get("/api/saude")
 def saude():
-    return {"ok": True, "modelo": MODEL, "llm_configurada": bool(os.getenv("ANTHROPIC_API_KEY"))}
+    modo_demonstracao = MODEL_PROVIDER == "demo" or (
+        MODEL_PROVIDER == "anthropic" and not os.getenv("ANTHROPIC_API_KEY")
+    )
+    return {
+        "ok": True,
+        "provedor": MODEL_PROVIDER,
+        "modelo": MODEL,
+        "llm_configurada": not modo_demonstracao,
+    }
 
 
 @app.post("/api/alunos")
@@ -200,13 +160,6 @@ def criar_aluno(body: NovoAluno):
     return {"id": cur.lastrowid, "apelido": apelido, "turma": turma}
 
 
-def contar_trechos(aluno_id: int, etapa: int) -> int:
-    try:
-        return chroma.get_collection(nome_colecao(aluno_id, etapa)).count()
-    except Exception:
-        return 0
-
-
 @app.get("/api/alunos/{aluno_id}")
 def ver_aluno(aluno_id: int):
     aluno = dict(get_aluno(aluno_id))
@@ -215,58 +168,83 @@ def ver_aluno(aluno_id: int):
 
 
 @app.post("/api/alunos/{aluno_id}/documentos")
-def enviar_documento(aluno_id: int, body: Documento):
+async def enviar_documento(aluno_id: int, etapa: int = Form(...), arquivo: UploadFile = File(...)):
     get_aluno(aluno_id)
-    try:
-        dado = json.loads(body.json_texto)
-    except json.JSONDecodeError as e:
-        raise HTTPException(400, f"JSON inválido na linha {e.lineno}, coluna {e.colno}: {e.msg}")
+    if etapa not in (2, 3):
+        raise HTTPException(400, "Etapa inválida (use 2 ou 3).")
 
-    trechos = [p for t in json_para_trechos(dado) for p in dividir(t) if p.strip()]
-    if not trechos:
-        raise HTTPException(400, "O JSON não tem nenhum texto para indexar.")
+    sufixo = Path(arquivo.filename or "").suffix.lower()
+    if sufixo not in (".pdf", ".txt"):
+        raise HTTPException(400, "Envie um arquivo PDF ou TXT.")
 
-    nome = nome_colecao(aluno_id, body.etapa)
-    try:
-        chroma.delete_collection(nome)  # reenviar substitui os dados da etapa
-    except Exception:
-        pass
-    col = chroma.create_collection(nome)
-    col.add(ids=[str(i) for i in range(len(trechos))], documents=trechos)
-    return {"trechos": len(trechos), "exemplos": trechos[:3]}
+    pasta_uploads = DATA / "uploads"
+    pasta_uploads.mkdir(parents=True, exist_ok=True)
+    caminho = pasta_uploads / f"aluno{aluno_id}_etapa{etapa}{sufixo}"
+    caminho.write_bytes(await arquivo.read())
+
+    paginas = extrair_paginas(caminho)
+    trechos_por_pagina = [
+        (pagina.pagina, trecho)
+        for pagina in paginas
+        for trecho in chunk_text(pagina.texto)
+        if trecho.strip()
+    ]
+    if not trechos_por_pagina:
+        raise HTTPException(400, "Não foi possível extrair texto do arquivo enviado.")
+
+    indice = obter_indice(aluno_id, etapa)
+    total = indice.add_document_chunks(
+        doc_id="documento", documento=arquivo.filename or sufixo, paginas_trechos=trechos_por_pagina
+    )
+    return {"trechos": total, "exemplos": [texto for _, texto in trechos_por_pagina[:3]]}
 
 
 @app.post("/api/alunos/{aluno_id}/perguntar")
 def perguntar(aluno_id: int, body: Pergunta):
     get_aluno(aluno_id)
-    trechos: list[dict] = []
+    use_rag = body.etapa != 1
 
-    if body.etapa == 1:
-        system = SYSTEM_LIVRE
-    else:
-        if contar_trechos(aluno_id, body.etapa) == 0:
-            raise HTTPException(400, f"Envie o JSON da etapa {body.etapa} antes de perguntar.")
-        col = chroma.get_collection(nome_colecao(aluno_id, body.etapa))
-        res = col.query(query_texts=[body.pergunta], n_results=min(TOP_K, col.count()))
-        for doc, dist in zip(res["documents"][0], res["distances"][0]):
-            trechos.append({"texto": doc, "distancia": round(float(dist), 3)})
-        contexto = "\n".join(f"[{i}] {t['texto']}" for i, t in enumerate(trechos, 1))
-        system = SYSTEM_RAG.format(contexto=contexto)
+    indice = None
+    if use_rag:
+        indice = obter_indice(aluno_id, body.etapa)
+        if indice.count() == 0:
+            raise HTTPException(400, f"Envie o documento da etapa {body.etapa} antes de perguntar.")
+
+    config = ProjectConfig(
+        project_id=f"aluno{aluno_id}",
+        model_provider=MODEL_PROVIDER,
+        model_name=MODEL,
+        embedding_model=EMBEDDING_MODEL,
+        prompt=PromptConfig(persona=SYSTEM_LIVRE if body.etapa == 1 else SYSTEM_RAG_INSTRUCAO),
+        retrieval=RetrievalConfig(top_k=TOP_K, similarity_threshold=SIMILARITY_THRESHOLD),
+    )
 
     try:
-        resposta = chamar_llm(system, body.pergunta)
+        resultado = engine_run(config, indice, body.pergunta, use_prompt=True, use_rag=use_rag)
     except Exception as e:
         raise HTTPException(502, f"Falha ao chamar a LLM: {e}")
 
+    trechos = [
+        {"texto": c.texto, "documento": c.documento, "pagina": c.pagina, "similaridade": c.similaridade}
+        for c in resultado.used_chunks
+    ]
     pergunta = body.pergunta.strip()
     with closing(db()) as conn:
         cur = conn.execute(
             "INSERT INTO respostas (aluno_id, etapa, pergunta, resposta, trechos, criado_em) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (aluno_id, body.etapa, pergunta, resposta, json.dumps(trechos, ensure_ascii=False), agora()),
+            (aluno_id, body.etapa, pergunta, resultado.answer, json.dumps(trechos, ensure_ascii=False), agora()),
         )
         conn.commit()
-    return {"id": cur.lastrowid, "etapa": body.etapa, "pergunta": pergunta, "resposta": resposta, "trechos": trechos}
+    return {
+        "id": cur.lastrowid,
+        "etapa": body.etapa,
+        "pergunta": pergunta,
+        "resposta": resultado.answer,
+        "trechos": trechos,
+        "tempo_segundos": resultado.time_seconds,
+        "nada_relevante": resultado.no_relevant_knowledge,
+    }
 
 
 def linhas_respostas(where: str = "", params: tuple = ()) -> list[dict]:
