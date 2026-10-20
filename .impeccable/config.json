@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "createdAt": "2026-10-20T13:02:28.048Z",
+        "reason": "user confirmed: escolhido via AskUserQuestion nesta sessão como a tipografia 'humana' da identidade Pantanal (par com IBM Plex Mono), decisão já registrada no DESIGN.md"
+      }
+    ]
+  }
+}
