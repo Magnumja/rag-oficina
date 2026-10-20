@@ -6,7 +6,7 @@
  * de `components/slide.tsx` ou `lib/conteudo.ts` aqui.
  */
 import { useEffect, useState } from 'react'
-import { ChevronDown, Download, FolderPlus, Send, Settings2, Upload } from 'lucide-react'
+import { Check, ChevronDown, Download, FolderPlus, KeyRound, Send, Settings2, Trash2, Upload } from 'lucide-react'
 import {
   apiProjeto,
   LIMITE_PROJETOS,
@@ -15,6 +15,7 @@ import {
   type Projeto,
   type RespostaProjeto,
 } from '@/lib/apiProjeto'
+import { esquecerChave, obterChave, salvarChave, temChave, type ProvedorIA } from '@/lib/chavesIA'
 import { Aviso, BotaoPrimario, CampoPrompt, Cartao, FichaCatalografica } from '@/components/pantanal'
 import { cn } from '@/lib/utils'
 import '@/pantanal.css'
@@ -47,6 +48,7 @@ export function ProjetoArea({ tela, irPara }: { tela: TelaProjeto; irPara: (t: T
   const [projetos, setProjetos] = useState<Projeto[] | null>(null)
   const [projetoAtual, setProjetoAtual] = useState<Projeto | null>(null)
   const [erro, setErro] = useState('')
+  const [minhaIAAberta, setMinhaIAAberta] = useState(false)
 
   const carregarLista = () => apiProjeto.listarProjetos().then(setProjetos).catch((e) => setErro(e.message))
 
@@ -84,38 +86,56 @@ export function ProjetoArea({ tela, irPara }: { tela: TelaProjeto; irPara: (t: T
             {projetoAtual ? projetoAtual.nome : 'Seus projetos'}
           </h1>
         </div>
-        {projetoAtual && (
-          <nav className="flex flex-wrap gap-1.5">
-            <button
-              onClick={() => {
-                setProjetoAtual(null)
-                irPara('projeto-lista')
-              }}
-              className="rounded-[var(--pantanal-raio)] px-2.5 py-1.5 text-xs text-[var(--cor-primaria)]/60 underline-offset-4 hover:underline"
-            >
-              ← trocar projeto
-            </button>
-            {SUBNAV.map((n) => (
+        <nav className="flex flex-wrap items-center gap-1.5">
+          {projetoAtual && (
+            <>
               <button
-                key={n.id}
-                onClick={() => irPara(n.id)}
-                className={cn(
-                  'rounded-[var(--pantanal-raio)] px-3 py-1.5 text-sm font-medium transition-colors',
-                  tela === n.id
-                    ? 'bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
-                    : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
-                )}
+                onClick={() => {
+                  setProjetoAtual(null)
+                  irPara('projeto-lista')
+                }}
+                className="rounded-[var(--pantanal-raio)] px-2.5 py-1.5 text-xs text-[var(--cor-primaria)]/60 underline-offset-4 hover:underline"
               >
-                {n.label}
+                ← trocar projeto
               </button>
-            ))}
-          </nav>
-        )}
+              {SUBNAV.map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => {
+                    setMinhaIAAberta(false)
+                    irPara(n.id)
+                  }}
+                  className={cn(
+                    'rounded-[var(--pantanal-raio)] px-3 py-1.5 text-sm font-medium transition-colors',
+                    !minhaIAAberta && tela === n.id
+                      ? 'bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
+                      : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
+                  )}
+                >
+                  {n.label}
+                </button>
+              ))}
+            </>
+          )}
+          <button
+            onClick={() => setMinhaIAAberta((a) => !a)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-[var(--pantanal-raio)] px-3 py-1.5 text-sm font-medium transition-colors',
+              minhaIAAberta
+                ? 'bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
+                : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
+            )}
+          >
+            <KeyRound className="size-3.5" /> Minha IA
+          </button>
+        </nav>
       </header>
 
       {erro && <Aviso tom="erro">{erro}</Aviso>}
 
-      {tela === 'projeto-lista' || !projetoAtual ? (
+      {minhaIAAberta ? (
+        <PainelMinhaIA />
+      ) : tela === 'projeto-lista' || !projetoAtual ? (
         <ListaProjetos
           projetos={projetos}
           onCriado={(p) => {
@@ -156,17 +176,19 @@ function ListaProjetos({
 }) {
   const [nome, setNome] = useState('')
   const [descricao, setDescricao] = useState('')
+  const [provedor, setProvedor] = useState<ProvedorIA>('ollama')
   const [criando, setCriando] = useState(false)
   const [erro, setErro] = useState('')
 
   const noLimite = (projetos?.length ?? 0) >= LIMITE_PROJETOS
+  const chaveFalta = provedor !== 'ollama' && !temChave(provedor)
 
   async function criar() {
     if (!nome.trim()) return
     setCriando(true)
     setErro('')
     try {
-      const p = await apiProjeto.criarProjeto(nome.trim(), descricao.trim())
+      const p = await apiProjeto.criarProjeto(nome.trim(), provedor, descricao.trim())
       setNome('')
       setDescricao('')
       onCriado(p)
@@ -222,12 +244,44 @@ function ListaProjetos({
               maxLength={500}
               className="w-full rounded-[var(--pantanal-raio)] border-[length:var(--pantanal-borda)] border-[var(--cor-prompt)]/40 bg-white/60 px-3 py-2 text-sm outline-none focus:border-[var(--cor-prompt)]"
             />
-            <BotaoPrimario onClick={criar} disabled={!nome.trim() || criando}>
+            <div>
+              <span className="text-xs font-semibold text-[var(--cor-primaria)]">Provedor de IA</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ['ollama', 'Ollama (grátis, sem conta)'],
+                    ['anthropic', 'Anthropic (minha chave)'],
+                    ['openai', 'OpenAI (minha chave)'],
+                  ] as [ProvedorIA, string][]
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setProvedor(id)}
+                    className={cn(
+                      'rounded-[var(--pantanal-raio)] border-[length:var(--pantanal-borda)] px-3 py-1.5 text-xs font-medium transition-colors',
+                      provedor === id
+                        ? 'border-[var(--cor-primaria)] bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
+                        : 'border-[var(--cor-primaria)]/30 text-[var(--cor-primaria)]/70 hover:border-[var(--cor-primaria)]',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {chaveFalta && (
+              <Aviso tom="erro">
+                Você ainda não colocou sua chave {provedor === 'anthropic' ? 'da Anthropic' : 'da OpenAI'}. Abra "Minha
+                IA" no topo da página pra colar e testar.
+              </Aviso>
+            )}
+            <BotaoPrimario onClick={criar} disabled={!nome.trim() || criando || chaveFalta}>
               <FolderPlus className="size-4" /> {criando ? 'Criando…' : 'Criar projeto'}
             </BotaoPrimario>
             <p className="text-xs text-[var(--cor-texto)]/50">
-              O modelo de IA (provedor configurado no servidor) fica fixo depois de criado — só o prompt, os
-              documentos e a configuração de busca podem ser alterados depois.
+              O provedor de IA fica fixo depois de criado — só o prompt, os documentos e a configuração de busca
+              podem ser alterados depois.
             </p>
             {erro && <Aviso tom="erro">{erro}</Aviso>}
           </div>
@@ -475,7 +529,7 @@ function TelaConversar({ projeto }: { projeto: Projeto }) {
     setEnviando(true)
     setErro('')
     try {
-      const resposta = await apiProjeto.perguntar(projeto.id, texto)
+      const resposta = await apiProjeto.perguntar(projeto.id, texto, projeto.model_provider as ProvedorIA)
       setHistorico((h) => [{ pergunta: texto, resposta }, ...h])
       setPergunta('')
     } catch (e) {
@@ -566,7 +620,7 @@ function TelaComparar({ projeto }: { projeto: Projeto }) {
     setRodando(true)
     setErro('')
     try {
-      const r = await apiProjeto.comparar(projeto.id, texto)
+      const r = await apiProjeto.comparar(projeto.id, texto, projeto.model_provider as ProvedorIA)
       setAtual(r)
       apiProjeto.comparacoes(projeto.id).then(setHistorico).catch(() => {})
       setPergunta('')
@@ -688,6 +742,113 @@ function TelaExportar({ projeto }: { projeto: Projeto }) {
       <p className="mt-3 text-xs text-[var(--cor-primaria)]/50">
         config.json + prompt_final_exemplo.txt + documentos/ + README.md
       </p>
+    </Cartao>
+  )
+}
+
+/* ---------------- Minha IA (BYOK) ---------------- */
+
+const CAMPOS_CHAVE: { id: 'anthropic' | 'openai'; label: string; ondeConseguir: string }[] = [
+  { id: 'anthropic', label: 'Anthropic (Claude)', ondeConseguir: 'console.anthropic.com → API Keys' },
+  { id: 'openai', label: 'OpenAI (GPT)', ondeConseguir: 'platform.openai.com → API keys' },
+]
+
+function PainelMinhaIA() {
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Aviso tom="ok">
+        Sua chave fica só neste navegador — nunca é enviada para o nosso banco de dados nem aparece em nenhum log.
+        Trate-a como uma senha: não a compartilhe.
+      </Aviso>
+      {CAMPOS_CHAVE.map((c) => (
+        <CampoChave key={c.id} provider={c.id} label={c.label} ondeConseguir={c.ondeConseguir} />
+      ))}
+      <Cartao>
+        <p className="font-semibold text-[var(--cor-primaria)]">Ollama</p>
+        <p className="mt-1 text-sm text-[var(--cor-texto)]/70">
+          Terceira opção, sem conta nem chave: usa o servidor Ollama compartilhado da turma. Mais lento e um modelo
+          menor, mas funciona de graça pra qualquer aluno.
+        </p>
+      </Cartao>
+    </div>
+  )
+}
+
+function CampoChave({
+  provider,
+  label,
+  ondeConseguir,
+}: {
+  provider: 'anthropic' | 'openai'
+  label: string
+  ondeConseguir: string
+}) {
+  const [valor, setValor] = useState(() => obterChave(provider) ?? '')
+  const [testando, setTestando] = useState(false)
+  const [resultado, setResultado] = useState<{ tom: 'ok' | 'erro'; msg: string } | null>(null)
+  const salva = !!obterChave(provider)
+
+  async function testarESalvar() {
+    if (!valor.trim()) return
+    setTestando(true)
+    setResultado(null)
+    try {
+      const r = await apiProjeto.validarChave(provider, valor.trim())
+      if (r.ok) {
+        salvarChave(provider, valor.trim())
+        setResultado({ tom: 'ok', msg: 'Chave válida e salva neste navegador.' })
+      } else {
+        setResultado({ tom: 'erro', msg: r.erro || 'Chave rejeitada pelo provedor.' })
+      }
+    } catch (e) {
+      setResultado({ tom: 'erro', msg: (e as Error).message })
+    } finally {
+      setTestando(false)
+    }
+  }
+
+  function esquecer() {
+    esquecerChave(provider)
+    setValor('')
+    setResultado(null)
+  }
+
+  return (
+    <Cartao>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-semibold text-[var(--cor-primaria)]">{label}</p>
+        {salva && (
+          <span className="flex items-center gap-1 text-xs text-[var(--cor-prompt)]">
+            <Check className="size-3.5" /> salva
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-[var(--cor-texto)]/50">Pegue a sua em: {ondeConseguir}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          type="password"
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          placeholder="Cole sua chave aqui"
+          className="min-w-0 flex-1 rounded-[var(--pantanal-raio)] border-[length:var(--pantanal-borda)] border-[var(--cor-prompt)]/40 bg-white/60 px-3 py-2 font-maquina text-sm outline-none focus:border-[var(--cor-prompt)]"
+        />
+        <BotaoPrimario onClick={testarESalvar} disabled={!valor.trim() || testando}>
+          {testando ? 'Testando…' : 'Testar e salvar'}
+        </BotaoPrimario>
+        {salva && (
+          <button
+            onClick={esquecer}
+            className="flex items-center gap-1.5 rounded-[var(--pantanal-raio)] px-2.5 py-1.5 text-xs text-[var(--cor-alerta)] hover:bg-[var(--cor-alerta)]/10"
+          >
+            <Trash2 className="size-3.5" /> esquecer
+          </button>
+        )}
+      </div>
+      {resultado && (
+        <Aviso tom={resultado.tom} className="mt-3">
+          {resultado.msg}
+        </Aviso>
+      )}
     </Cartao>
   )
 }

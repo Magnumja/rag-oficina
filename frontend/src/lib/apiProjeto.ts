@@ -2,7 +2,12 @@
  * Cliente do modelo "Projeto" — espelha 1:1 os endpoints de `backend/projetos.py`
  * (prefixo `/api/alunos/{aluno_id}/projetos`). Reaproveita o aluno anônimo já
  * criado por `lib/api.ts` (mesma chave de localStorage).
+ *
+ * BYOK: a chave do aluno nunca é lida daqui direto — quem chama `perguntar`/
+ * `comparar` passa o provedor do projeto, e a chave correspondente (se houver)
+ * é buscada em `lib/chavesIA.ts` e anexada só nessa requisição, via header.
  */
+import { obterChave, type ProvedorIA } from './chavesIA'
 
 export interface ProjetoDocumento {
   id: number
@@ -96,11 +101,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+function headerChave(provider: ProvedorIA): Record<string, string> {
+  const chave = obterChave(provider)
+  return chave ? { 'X-Provider-Api-Key': chave } : {}
+}
+
 export const apiProjeto = {
   listarProjetos: () => req<Projeto[]>(''),
 
-  criarProjeto: (nome: string, descricao?: string) =>
-    req<Projeto>('', { method: 'POST', body: JSON.stringify({ nome, descricao: descricao || null }) }),
+  criarProjeto: (nome: string, modelProvider: ProvedorIA, descricao?: string) =>
+    req<Projeto>('', {
+      method: 'POST',
+      body: JSON.stringify({ nome, descricao: descricao || null, model_provider: modelProvider }),
+    }),
 
   verProjeto: (projetoId: number) => req<Projeto>(`/${projetoId}`),
 
@@ -134,13 +147,18 @@ export const apiProjeto = {
     return res.json() as Promise<ProjetoDocumento>
   },
 
-  perguntar: (projetoId: number, pergunta: string) =>
-    req<RespostaProjeto>(`/${projetoId}/perguntar`, { method: 'POST', body: JSON.stringify({ pergunta }) }),
+  perguntar: (projetoId: number, pergunta: string, provider: ProvedorIA) =>
+    req<RespostaProjeto>(`/${projetoId}/perguntar`, {
+      method: 'POST',
+      body: JSON.stringify({ pergunta }),
+      headers: headerChave(provider),
+    }),
 
-  comparar: (projetoId: number, pergunta: string) =>
+  comparar: (projetoId: number, pergunta: string, provider: ProvedorIA) =>
     req<{ pergunta: string; camadas: Record<ModoResposta, RespostaProjeto> }>(`/${projetoId}/comparar`, {
       method: 'POST',
       body: JSON.stringify({ pergunta }),
+      headers: headerChave(provider),
     }),
 
   comparacoes: (projetoId: number) => req<ComparacaoProjeto[]>(`/${projetoId}/comparacoes`),
@@ -156,5 +174,17 @@ export const apiProjeto = {
     el.download = `projeto-${projetoId}-${nomeProjeto.trim().toLowerCase().replace(/\s+/g, '-')}.zip`
     el.click()
     URL.revokeObjectURL(url)
+  },
+
+  /** Testa a chave antes de salvar — não passa por `req()` porque não é um
+   * endpoint de projeto (não tem aluno/projeto_id na URL). */
+  async validarChave(provider: 'anthropic' | 'openai', apiKey: string): Promise<{ ok: boolean; erro?: string }> {
+    const res = await fetch('/api/validar-chave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, api_key: apiKey }),
+    })
+    if (!res.ok) return { ok: false, erro: `Erro ${res.status}` }
+    return res.json()
   },
 }
