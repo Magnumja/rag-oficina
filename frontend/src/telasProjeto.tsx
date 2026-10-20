@@ -6,7 +6,8 @@
  * de `components/slide.tsx` ou `lib/conteudo.ts` aqui.
  */
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, Download, FolderPlus, KeyRound, Send, Settings2, Trash2, Upload } from 'lucide-react'
+import { motion } from 'motion/react'
+import { Atom, Check, ChevronDown, Download, Feather, FolderPlus, KeyRound, Send, Server, Settings2, Trash2, Upload } from 'lucide-react'
 import {
   apiProjeto,
   LIMITE_PROJETOS,
@@ -16,9 +17,16 @@ import {
   type RespostaProjeto,
 } from '@/lib/apiProjeto'
 import { esquecerChave, obterChave, salvarChave, temChave, type ProvedorIA } from '@/lib/chavesIA'
-import { Aviso, BotaoPrimario, CampoPrompt, Cartao, FichaCatalografica } from '@/components/pantanal'
+import { Aviso, BotaoPrimario, BotaoSelecao, CampoPrompt, Cartao, FichaCatalografica } from '@/components/pantanal'
 import { cn } from '@/lib/utils'
 import '@/pantanal.css'
+
+const ICONE_PROVEDOR: Record<ProvedorIA, typeof Server> = { ollama: Server, anthropic: Feather, openai: Atom }
+const COR_PROVEDOR: Record<ProvedorIA, string> = {
+  ollama: 'var(--cor-prompt)',
+  anthropic: 'var(--cor-primaria)',
+  openai: 'var(--cor-acao-futura)',
+}
 
 export type TelaProjeto =
   | 'projeto-lista'
@@ -86,7 +94,7 @@ export function ProjetoArea({ tela, irPara }: { tela: TelaProjeto; irPara: (t: T
             {projetoAtual ? projetoAtual.nome : 'Seus projetos'}
           </h1>
         </div>
-        <nav className="flex flex-wrap items-center gap-1.5">
+        <nav className="flex flex-wrap items-center gap-1">
           {projetoAtual && (
             <>
               <button
@@ -94,39 +102,54 @@ export function ProjetoArea({ tela, irPara }: { tela: TelaProjeto; irPara: (t: T
                   setProjetoAtual(null)
                   irPara('projeto-lista')
                 }}
-                className="rounded-[var(--pantanal-raio)] px-2.5 py-1.5 text-xs text-[var(--cor-primaria)]/60 underline-offset-4 hover:underline"
+                className="rounded-[var(--pantanal-raio-selecao)] px-2.5 py-1.5 text-xs text-[var(--cor-primaria)]/60 underline-offset-4 hover:underline"
               >
                 ← trocar projeto
               </button>
-              {SUBNAV.map((n) => (
-                <button
-                  key={n.id}
-                  onClick={() => {
-                    setMinhaIAAberta(false)
-                    irPara(n.id)
-                  }}
-                  className={cn(
-                    'rounded-[var(--pantanal-raio)] px-3 py-1.5 text-sm font-medium transition-colors',
-                    !minhaIAAberta && tela === n.id
-                      ? 'bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
-                      : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
-                  )}
-                >
-                  {n.label}
-                </button>
-              ))}
+              {SUBNAV.map((n) => {
+                const ativo = !minhaIAAberta && tela === n.id
+                return (
+                  <button
+                    key={n.id}
+                    onClick={() => {
+                      setMinhaIAAberta(false)
+                      irPara(n.id)
+                    }}
+                    className={cn(
+                      'relative rounded-[var(--pantanal-raio-selecao)] px-3 py-1.5 text-sm font-medium transition-colors',
+                      ativo ? 'text-[var(--cor-fundo)]' : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
+                    )}
+                  >
+                    {ativo && (
+                      <motion.span
+                        layoutId="projeto-nav-pill"
+                        className="absolute inset-0 rounded-[var(--pantanal-raio-selecao)] bg-[var(--cor-primaria)]"
+                        transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }}
+                      />
+                    )}
+                    <span className="relative">{n.label}</span>
+                  </button>
+                )
+              })}
             </>
           )}
           <button
             onClick={() => setMinhaIAAberta((a) => !a)}
             className={cn(
-              'flex items-center gap-1.5 rounded-[var(--pantanal-raio)] px-3 py-1.5 text-sm font-medium transition-colors',
-              minhaIAAberta
-                ? 'bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
-                : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
+              'relative flex items-center gap-1.5 rounded-[var(--pantanal-raio-selecao)] px-3 py-1.5 text-sm font-medium transition-colors',
+              minhaIAAberta ? 'text-[var(--cor-fundo)]' : 'text-[var(--cor-primaria)]/70 hover:bg-[var(--cor-primaria)]/8',
             )}
           >
-            <KeyRound className="size-3.5" /> Minha IA
+            {minhaIAAberta && (
+              <motion.span
+                layoutId="projeto-nav-pill"
+                className="absolute inset-0 rounded-[var(--pantanal-raio-selecao)] bg-[var(--cor-primaria)]"
+                transition={{ type: 'spring', bounce: 0.3, duration: 0.5 }}
+              />
+            )}
+            <span className="relative flex items-center gap-1.5">
+              <KeyRound className="size-3.5" /> Minha IA
+            </span>
           </button>
         </nav>
       </header>
@@ -246,27 +269,27 @@ function ListaProjetos({
             />
             <div>
               <span className="text-xs font-semibold text-[var(--cor-primaria)]">Provedor de IA</span>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap gap-3">
                 {(
                   [
-                    ['ollama', 'Ollama (grátis, sem conta)'],
-                    ['anthropic', 'Anthropic (minha chave)'],
-                    ['openai', 'OpenAI (minha chave)'],
-                  ] as [ProvedorIA, string][]
-                ).map(([id, label]) => (
-                  <button
+                    ['ollama', 'Ollama', 'grátis, sem conta'],
+                    ['anthropic', 'Anthropic', 'minha chave'],
+                    ['openai', 'OpenAI', 'minha chave'],
+                  ] as [ProvedorIA, string, string][]
+                ).map(([id, label, legenda]) => (
+                  <BotaoSelecao
                     key={id}
-                    type="button"
+                    icone={ICONE_PROVEDOR[id]}
+                    cor={COR_PROVEDOR[id]}
+                    ativo={provedor === id}
                     onClick={() => setProvedor(id)}
-                    className={cn(
-                      'rounded-[var(--pantanal-raio)] border-[length:var(--pantanal-borda)] px-3 py-1.5 text-xs font-medium transition-colors',
-                      provedor === id
-                        ? 'border-[var(--cor-primaria)] bg-[var(--cor-primaria)] text-[var(--cor-fundo)]'
-                        : 'border-[var(--cor-primaria)]/30 text-[var(--cor-primaria)]/70 hover:border-[var(--cor-primaria)]',
-                    )}
-                  >
-                    {label}
-                  </button>
+                    rotulo={
+                      <span className="flex flex-col items-center">
+                        {label}
+                        <span className="text-[10px] font-normal opacity-70">{legenda}</span>
+                      </span>
+                    }
+                  />
                 ))}
               </div>
             </div>

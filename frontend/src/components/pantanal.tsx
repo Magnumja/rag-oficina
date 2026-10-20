@@ -3,8 +3,9 @@
  * Projeto. Independentes de `components/slide.tsx`/`lib/conteudo.ts` — nenhum tipo
  * ou classe daqui entra na Início ou nas Etapas da Oficina RAG.
  */
-import type { ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2 } from 'lucide-react'
+import type { ComponentType, ReactNode } from 'react'
+import { motion } from 'motion/react'
+import { AlertTriangle, Check, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function Cartao({ className, children }: { className?: string; children: ReactNode }) {
@@ -132,5 +133,62 @@ export function CampoPrompt({
         className="font-maquina mt-2 w-full resize-none rounded-[var(--pantanal-raio)] border-[length:var(--pantanal-borda)] border-[var(--cor-prompt)]/40 bg-white/60 p-3 text-sm text-[var(--cor-texto)] outline-none placeholder:text-[var(--cor-texto)]/35 focus:border-[var(--cor-prompt)]"
       />
     </label>
+  )
+}
+
+/** Botão de seleção animado (provedor de IA, abas) — cartão colorido com ícone,
+ * reage ao toque e ganha um check animado quando ativo. Raio maior e mais lúdico
+ * (`--pantanal-raio-selecao`) do que os cartões de conteúdo, de propósito: é
+ * controle, não ficha — ver DESIGN.md Shapes. */
+export function BotaoSelecao({
+  icone: Icone,
+  rotulo,
+  cor = 'var(--cor-primaria)',
+  ativo,
+  onClick,
+  disabled,
+  className,
+}: {
+  icone: ComponentType<{ className?: string }>
+  rotulo: ReactNode
+  cor?: string
+  ativo: boolean
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      whileHover={disabled ? undefined : { y: -2, rotate: -1 }}
+      whileTap={disabled ? undefined : { scale: 0.96 }}
+      animate={ativo ? { scale: [1, 1.05, 1] } : { scale: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+      className={cn(
+        'relative flex flex-col items-center gap-1.5 rounded-[var(--pantanal-raio-selecao)] border-[length:var(--pantanal-borda)] px-4 py-3 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-40',
+        className,
+      )}
+      style={
+        ativo
+          ? { borderColor: cor, background: `color-mix(in oklab, ${cor}, white 78%)`, color: cor }
+          : { borderColor: 'color-mix(in oklab, var(--cor-primaria), transparent 70%)', color: 'var(--cor-primaria)' }
+      }
+    >
+      {ativo && (
+        <motion.span
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+          className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full text-white"
+          style={{ background: cor }}
+        >
+          <Check className="size-3" strokeWidth={3} />
+        </motion.span>
+      )}
+      <Icone className="size-5" />
+      {rotulo}
+    </motion.button>
   )
 }

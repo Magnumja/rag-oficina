@@ -1,6 +1,8 @@
-<!-- SEED: estabelecido com o usuário antes da implementação; rodar /impeccable
-     document em modo scan depois que a UI do fluxo "Projeto" existir, para
-     capturar os tokens e componentes reais a partir do código. -->
+<!-- SEED: paleta/layout/elevação ainda são o seed original, estabelecido antes da
+     implementação. Typography, Shapes e Components FORAM revisados depois que a UI
+     do fluxo "Projeto" já existia e rodava no navegador — não são mais seed, são a
+     decisão em vigor (ver Overview). Rodar /impeccable document em modo scan
+     captura o resto a partir do código quando o fluxo estiver mais maduro. -->
 
 ---
 name: "Educagente — Pantanal"
@@ -14,9 +16,9 @@ colors:
   acao_futura: "#B5643C"
   alerta: "#C8402F"
 typography:
-  humana: "Fraunces"
+  humana: "Baloo 2"
   maquina: "IBM Plex Mono"
-rounded: "sm (bordas retas ou levemente arredondadas, nunca pill em componentes de conteúdo)"
+rounded: "duplo — sm (conteúdo: cartões, fichas) + lg/pill (controles de seleção: botões de provedor, abas) — ver Shapes"
 spacing: "escala conservadora 4/8/12/16/24/32px, grade discreta visível"
 ---
 
@@ -53,11 +55,15 @@ cor nunca é o único sinal de significado (sempre acompanhada de ícone/texto).
 
 ## Typography
 
-- **Fraunces** (serifa suave, não-itálica) — títulos, corpo, rótulos de campo. É a
-  "fonte humana": o que a pessoa escreve e lê.
+- **Baloo 2** (arredondada, traços grossos e amigáveis, suporte a português) —
+  títulos, corpo, rótulos de campo. É a "fonte humana": o que a pessoa escreve e
+  lê. Substitui a Fraunces do seed original — o usuário achou a serifa séria
+  demais pro público (adolescentes de Ensino Médio); Baloo 2 é suave e animada
+  sem cair em fonte de app infantil.
 - **IBM Plex Mono** — tudo que é "da máquina": trechos citados nas fichas
   catalográficas, prompt final montado, JSON de configuração exportado, tokens/tempo
-  de resposta.
+  de resposta. Mantida — não fez parte da crítica do usuário, e o contraste
+  arredondada/monoespaçada reforça a distinção humano×máquina.
 - Tamanho base generoso (pensado para texto legível via projetor que desbota cor).
 
 ## Layout
@@ -73,9 +79,16 @@ Nenhuma elevação tipo glassmorphism ou blur de fundo.
 
 ## Shapes
 
-Bordas retas ou levemente arredondadas (raio pequeno e consistente). Nunca formas
-"pill" em componentes de conteúdo (cartões, fichas); pílulas/badges, se existirem,
-são pequenas e de uso raro (ex. status de documento).
+Raio duplo, com papel diferente para cada família:
+
+- **Conteúdo** (cartões, fichas catalográficas) — raio pequeno e consistente
+  (`--pantanal-raio`), bordas retas ou levemente arredondadas. Nunca pill.
+- **Controles de seleção** (botões de provedor de IA, abas de navegação do
+  Projeto) — raio bem maior (`--pantanal-raio-selecao`, próximo de pill),
+  justamente pra parecerem controles vivos e tocáveis, não fichas de arquivo.
+  Essa é a correção do seed original, que proibia pill em qualquer componente —
+  a régua agora é "controle ≠ conteúdo": o que se lê fica contido, o que se
+  toca pode ser mais solto e animado.
 
 ## Components
 
@@ -88,8 +101,14 @@ são pequenas e de uso raro (ex. status de documento).
   é visível na régua.
 - **Aviso** — ícone + texto curto, nunca cor isolada; usado para "nada relevante
   encontrado", erros de upload, avisos de LGPD.
-- **Campo de prompt** — rótulo (Fraunces, peso médio) + textarea (IBM Plex Mono,
+- **Campo de prompt** — rótulo (Baloo 2, peso médio) + textarea (IBM Plex Mono,
   já que o conteúdo digitado vira literalmente parte do prompt enviado ao modelo).
+- **Botão de seleção** — cartão com raio grande (`--pantanal-raio-selecao`),
+  ícone + rótulo, cor-tema da opção; reage ao toque (leve rotação/elevação) e
+  ganha um selo de check animado quando ativo. Usado no seletor de provedor de
+  IA e, como pill com destaque deslizante (`layoutId`), nas abas de navegação
+  do Projeto. É o componente "animado" que resolve a crítica de "área de
+  seleção genérica" do seed original.
 
 ## Do's and Don'ts
 
@@ -98,6 +117,8 @@ são pequenas e de uso raro (ex. status de documento).
 - Grifar com `--cor-conhecimento` só o trecho citado, nunca o cartão inteiro.
 - Manter as 3 colunas do Comparar visualmente equivalentes em peso (nenhuma "ganha"
   destaque), diferenciando só pelo conteúdo.
+- Animar só controles de seleção/navegação (motion já é dependência do projeto),
+  nunca o texto de resposta da IA ou os dados da ficha catalográfica.
 
 **Não fazer:**
 - Gradiente roxo/azul.
