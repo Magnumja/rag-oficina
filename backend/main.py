@@ -93,6 +93,29 @@ def saude():
     }
 
 
+class ValidarChave(BaseModel):
+    provider: str = Field(pattern="^(anthropic|openai)$")
+    api_key: str = Field(min_length=1, max_length=400)
+
+
+@app.post("/api/validar-chave")
+def validar_chave(body: ValidarChave):
+    """Testa a chave do aluno com uma chamada mínima (lista de modelos, sem gastar
+    tokens de conversa) e a descarta — nunca fica guardada no servidor."""
+    try:
+        if body.provider == "anthropic":
+            import anthropic
+
+            anthropic.Anthropic(api_key=body.api_key).models.list(limit=1)
+        else:
+            import openai
+
+            openai.OpenAI(api_key=body.api_key).models.list()
+    except Exception as e:
+        return {"ok": False, "erro": str(e)}
+    return {"ok": True}
+
+
 @app.post("/api/alunos")
 def criar_aluno(body: NovoAluno):
     if not body.consentimento:

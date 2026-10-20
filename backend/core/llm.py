@@ -44,14 +44,15 @@ class OllamaAdapter(ChatAdapter):
 
 
 class AnthropicAdapter(ChatAdapter):
-    def __init__(self, model: str):
+    def __init__(self, model: str, api_key: str | None = None):
         self.model = model
+        self.api_key = api_key
 
     def chat(self, system: str, question: str) -> ChatResult:
         import anthropic
 
         inicio = time.monotonic()
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(api_key=self.api_key) if self.api_key else anthropic.Anthropic()
         msg = client.messages.create(
             model=self.model,
             max_tokens=600,
@@ -62,6 +63,29 @@ class AnthropicAdapter(ChatAdapter):
             answer="".join(b.text for b in msg.content if b.type == "text"),
             tokens_in=msg.usage.input_tokens,
             tokens_out=msg.usage.output_tokens,
+            time_seconds=time.monotonic() - inicio,
+        )
+
+
+class OpenAIAdapter(ChatAdapter):
+    def __init__(self, model: str, api_key: str | None = None):
+        self.model = model
+        self.api_key = api_key
+
+    def chat(self, system: str, question: str) -> ChatResult:
+        import openai
+
+        inicio = time.monotonic()
+        client = openai.OpenAI(api_key=self.api_key) if self.api_key else openai.OpenAI()
+        resp = client.chat.completions.create(
+            model=self.model,
+            max_tokens=600,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": question}],
+        )
+        return ChatResult(
+            answer=resp.choices[0].message.content or "",
+            tokens_in=resp.usage.prompt_tokens if resp.usage else 0,
+            tokens_out=resp.usage.completion_tokens if resp.usage else 0,
             time_seconds=time.monotonic() - inicio,
         )
 
@@ -80,13 +104,19 @@ class DemoAdapter(ChatAdapter):
         return ChatResult(answer=resposta, tokens_in=0, tokens_out=0, time_seconds=time.monotonic() - inicio)
 
 
-def build_adapter(provider: str, model: str) -> ChatAdapter:
+def build_adapter(provider: str, model: str, api_key: str | None = None) -> ChatAdapter:
     if provider == "demo":
         return DemoAdapter()
     if provider == "ollama":
         return OllamaAdapter(model)
     if provider == "anthropic":
-        if not os.getenv("ANTHROPIC_API_KEY"):
+        chave = api_key or os.getenv("ANTHROPIC_API_KEY")
+        if not chave:
             return DemoAdapter()
-        return AnthropicAdapter(model)
+        return AnthropicAdapter(model, chave)
+    if provider == "openai":
+        chave = api_key or os.getenv("OPENAI_API_KEY")
+        if not chave:
+            return DemoAdapter()
+        return OpenAIAdapter(model, chave)
     raise ValueError(f"Provedor de modelo desconhecido: {provider}")

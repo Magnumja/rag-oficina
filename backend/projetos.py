@@ -2,8 +2,9 @@
 campos, sobe seus documentos, conversa com o agente completo e compara lado a lado
 modelo puro vs. +prompt vs. +prompt+RAG.
 
-Reaproveita o núcleo (`core/`) tal como está — nenhuma mudança no contrato
-`engine.run(config, index, question, use_prompt, use_rag) -> EngineResult`.
+Reaproveita o núcleo (`core/`) tal como está — a única mudança no contrato
+`engine.run(config, index, question, use_prompt, use_rag, api_key=None) -> EngineResult`
+foi o parâmetro `api_key` aditivo, pra suportar BYOK (ver core/engine.py).
 """
 from __future__ import annotations
 
@@ -11,11 +12,11 @@ import json
 from contextlib import closing
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from config import DATA, EMBEDDING_MODEL, MODEL, MODEL_PROVIDER
+from config import DATA, EMBEDDING_MODEL
 from core.chunking import chunk_text
 from core.engine import run as engine_run
 from core.export import build_export_zip
@@ -27,12 +28,21 @@ from db import agora, db, get_aluno
 
 LIMITE_PROJETOS = 3
 
+# BYOK: um modelo fixo por provedor (evita o aluno digitar um nome de modelo
+# inválido). "ollama" não precisa de chave — usa o servidor local da turma.
+MODELOS_POR_PROVEDOR = {
+    "anthropic": "claude-haiku-5-5",
+    "openai": "gpt-4o-mini",
+    "ollama": "llama3.2:1b",
+}
+
 router = APIRouter(prefix="/api/alunos/{aluno_id}/projetos", tags=["projetos"])
 
 
 class NovoProjeto(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
     descricao: str | None = Field(default=None, max_length=500)
+    model_provider: str = Field(default="ollama")
     cenario_id: str | None = None
 
 
@@ -145,6 +155,9 @@ def resultado_para_json(resultado, resposta_id: int, modo: str) -> dict:
 @router.post("")
 def criar_projeto(aluno_id: int, body: NovoProjeto):
     get_aluno(aluno_id)
+    if body.model_provider not in MODELOS_POR_PROVEDOR:
+        raise HTTPException(400, f"Provedor inválido. Use um de: {', '.join(MODELOS_POR_PROVEDOR)}.")
+    model_name = MODELOS_POR_PROVEDOR[body.model_provider]
     with closing(db()) as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM projetos WHERE aluno_id = ?", (aluno_id,)).fetchone()["n"]
         if total >= LIMITE_PROJETOS:
@@ -153,7 +166,7 @@ def criar_projeto(aluno_id: int, body: NovoProjeto):
         cur = conn.execute(
             "INSERT INTO projetos (aluno_id, nome, descricao, cenario_id, model_provider, model_name, "
             "embedding_model, criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (aluno_id, body.nome.strip(), body.descricao, body.cenario_id, MODEL_PROVIDER, MODEL,
+            (aluno_id, body.nome.strip(), body.descricao, body.cenario_id, body.model_provider, model_name,
              EMBEDDING_MODEL, agora_str, agora_str),
         )
         conn.commit()
@@ -237,14 +250,19 @@ async def enviar_documento_projeto(aluno_id: int, projeto_id: int, arquivo: Uplo
 
 
 @router.post("/{projeto_id}/perguntar")
-def perguntar_projeto(aluno_id: int, projeto_id: int, body: PerguntaProjeto):
+def perguntar_projeto(
+    aluno_id: int,
+    projeto_id: int,
+    body: PerguntaProjeto,
+    x_provider_api_key: str | None = Header(default=None),
+):
     get_aluno(aluno_id)
     projeto = get_projeto(aluno_id, projeto_id)
     config = projeto_para_config(projeto)
     indice = obter_indice(projeto_id, config)
 
     try:
-        resultado = engine_run(config, indice, body.pergunta, use_prompt=True, use_rag=True)
+        resultado = engine_run(config, indice, body.pergunta, use_prompt=True, use_rag=True, api_key=x_provider_api_key)
     except Exception as e:
         raise HTTPException(502, f"Falha ao chamar a LLM: {e}")
 
@@ -253,7 +271,12 @@ def perguntar_projeto(aluno_id: int, projeto_id: int, body: PerguntaProjeto):
 
 
 @router.post("/{projeto_id}/comparar")
-def comparar_projeto(aluno_id: int, projeto_id: int, body: PerguntaProjeto):
+def comparar_projeto(
+    aluno_id: int,
+    projeto_id: int,
+    body: PerguntaProjeto,
+    x_provider_api_key: str | None = Header(default=None),
+):
     get_aluno(aluno_id)
     projeto = get_projeto(aluno_id, projeto_id)
     config = projeto_para_config(projeto)
@@ -264,7 +287,7 @@ def comparar_projeto(aluno_id: int, projeto_id: int, body: PerguntaProjeto):
     resultados = {}
     try:
         for modo, use_prompt, use_rag in camadas:
-            resultado = engine_run(config, indice, pergunta, use_prompt=use_prompt, use_rag=use_rag)
+            resultado = engine_run(config, indice, pergunta, use_prompt=use_prompt, use_rag=use_rag, api_key=x_provider_api_key)
             resposta_id = salvar_resposta(projeto_id, pergunta, modo, resultado)
             resultados[modo] = resultado_para_json(resultado, resposta_id, modo)
     except Exception as e:

@@ -1,6 +1,11 @@
 """Função central do núcleo. Contrato fixado com o usuário — não mudar sem checar com ele:
 
-    run(config, index, question, use_prompt, use_rag) -> EngineResult
+    run(config, index, question, use_prompt, use_rag, api_key=None) -> EngineResult
+
+`api_key` foi adicionada de forma aditiva (default None) para suportar BYOK: o
+aluno cola a própria chave Anthropic/OpenAI no navegador e ela viaja por
+requisição via header, nunca fica guardada no servidor. Sem `api_key`, cai no
+fallback do `.env` do servidor (modo demonstração/turma), como antes.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ def run(
     question: str,
     use_prompt: bool,
     use_rag: bool,
+    api_key: str | None = None,
 ) -> EngineResult:
     inicio = time.monotonic()
     chunks = []
@@ -30,7 +36,7 @@ def run(
         no_relevant_knowledge = not chunks
 
     system = build_prompt(config.prompt, chunks, use_prompt=use_prompt, use_rag=use_rag)
-    adapter = build_adapter(config.model_provider, config.model_name)
+    adapter = build_adapter(config.model_provider, config.model_name, api_key)
     resultado = adapter.chat(system=system or "Responda à pergunta do usuário.", question=question)
 
     return EngineResult(
