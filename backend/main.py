@@ -2,41 +2,32 @@
 perguntas.
 
 Etapa 1 = LLM sem RAG. Etapa 2 = RAG com documento "errado". Etapa 3 = RAG com documento real.
+
+O modelo "Projeto" (criar projeto, prompt de 5 campos, Conversar/Comparar/Exportar) vive em
+`projetos.py`, montado abaixo como router — reaproveita o mesmo núcleo (`core/`) e o mesmo
+banco (`db.py`).
 """
 
 import csv
 import io
 import json
 import os
-import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+import projetos
+from config import CORS_ORIGINS, DATA, EMBEDDING_MODEL, MODEL, MODEL_PROVIDER, SIMILARITY_THRESHOLD, TOP_K
 from core.chunking import chunk_text
 from core.engine import run as engine_run
 from core.ingestion import extrair_paginas
 from core.schema import PromptConfig, ProjectConfig, RetrievalConfig
 from core.store import ProjectIndex
-
-BASE = Path(__file__).parent
-load_dotenv(BASE / ".env")
-
-DATA = BASE / "data"
-DATA.mkdir(exist_ok=True)
-DB_PATH = DATA / "oficina.db"
-
-MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "anthropic")
-MODEL = os.getenv("LLM_MODEL", "llama3.2:1b" if MODEL_PROVIDER == "ollama" else "claude-haiku-5-5")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "bge-m3")
-TOP_K = int(os.getenv("TOP_K", "4"))
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
+from db import agora, db, get_aluno
 
 SYSTEM_LIVRE = (
     "Você é um assistente conversando com estudantes do Ensino Médio. Responda em português, "
@@ -50,51 +41,7 @@ SYSTEM_RAG_INSTRUCAO = (
 )
 
 
-# ---------- banco relacional (alunos e respostas) ----------
-
-def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-with closing(db()) as conn:
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS alunos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            apelido TEXT NOT NULL,
-            turma TEXT,
-            consentimento INTEGER NOT NULL,
-            criado_em TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS respostas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            aluno_id INTEGER NOT NULL REFERENCES alunos(id),
-            etapa INTEGER NOT NULL,
-            pergunta TEXT NOT NULL,
-            resposta TEXT NOT NULL,
-            trechos TEXT NOT NULL,
-            criado_em TEXT NOT NULL
-        );
-        """
-    )
-    conn.commit()
-
-
-def agora() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def get_aluno(aluno_id: int) -> sqlite3.Row:
-    with closing(db()) as conn:
-        row = conn.execute("SELECT * FROM alunos WHERE id = ?", (aluno_id,)).fetchone()
-    if not row:
-        raise HTTPException(404, "Aluno não encontrado")
-    return row
-
-
-# ---------- RAG ----------
+# ---------- RAG (Oficina — 3 etapas fixas) ----------
 
 def caminho_indice(aluno_id: int, etapa: int) -> Path:
     return DATA / "indices" / f"aluno{aluno_id}_etapa{etapa}.jsonl"
@@ -112,13 +59,14 @@ def contar_trechos(aluno_id: int, etapa: int) -> int:
 
 # ---------- API ----------
 
-app = FastAPI(title="Oficina RAG")
+app = FastAPI(title="Educagente")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(projetos.router)
 
 
 class NovoAluno(BaseModel):
