@@ -96,12 +96,19 @@ export const api = {
     if (!(await servidor())) return demo.trechos()
     return (await req<{ trechos: Record<string, number> }>(`/alunos/${await aluno()}`)).trechos
   },
-  async enviarJson(etapa: Etapa, json_texto: string) {
-    if (!(await servidor())) return demo.enviarJson(etapa, json_texto)
-    return req<{ trechos: number; exemplos: string[] }>(`/alunos/${await aluno()}/documentos`, {
-      method: 'POST',
-      body: JSON.stringify({ etapa, json_texto }),
-    })
+  /** Envia o documento (PDF ou TXT) da etapa 2 ou 3. No modo demonstração, lê o texto do
+   * arquivo no navegador e simula a indexação (sem extração de página real). */
+  async enviarArquivo(etapa: Etapa, arquivo: File) {
+    if (!(await servidor())) return demo.enviarJson(etapa, await arquivo.text())
+    const form = new FormData()
+    form.set('etapa', String(etapa))
+    form.set('arquivo', arquivo)
+    const res = await fetch(`/api/alunos/${await aluno()}/documentos`, { method: 'POST', body: form })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(typeof body.detail === 'string' ? body.detail : `Erro ${res.status}`)
+    }
+    return res.json() as Promise<{ trechos: number; exemplos: string[] }>
   },
   async perguntar(etapa: Etapa, pergunta: string) {
     if (!(await servidor())) return demo.perguntar(etapa, pergunta)
