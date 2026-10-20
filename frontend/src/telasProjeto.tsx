@@ -225,6 +225,10 @@ function ListaProjetos({
             <BotaoPrimario onClick={criar} disabled={!nome.trim() || criando}>
               <FolderPlus className="size-4" /> {criando ? 'Criando…' : 'Criar projeto'}
             </BotaoPrimario>
+            <p className="text-xs text-[var(--cor-texto)]/50">
+              O modelo de IA (provedor configurado no servidor) fica fixo depois de criado — só o prompt, os
+              documentos e a configuração de busca podem ser alterados depois.
+            </p>
             {erro && <Aviso tom="erro">{erro}</Aviso>}
           </div>
         </Cartao>
