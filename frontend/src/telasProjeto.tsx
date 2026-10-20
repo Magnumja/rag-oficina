@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { Atom, Check, ChevronDown, Download, Feather, FolderPlus, KeyRound, Send, Server, Settings2, Trash2, Upload } from 'lucide-react'
+import { Atom, Check, ChevronDown, Download, Feather, FolderPlus, HelpCircle, KeyRound, Send, Server, Settings2, Trash2, Upload } from 'lucide-react'
 import {
   apiProjeto,
   LIMITE_PROJETOS,
@@ -17,7 +17,7 @@ import {
   type RespostaProjeto,
 } from '@/lib/apiProjeto'
 import { esquecerChave, obterChave, salvarChave, temChave, type ProvedorIA } from '@/lib/chavesIA'
-import { Aviso, BotaoPrimario, BotaoSelecao, CampoPrompt, Cartao, FichaCatalografica } from '@/components/pantanal'
+import { Aviso, BotaoPrimario, BotaoSelecao, CampoPrompt, Cartao, FichaCatalografica, JanelaInfo } from '@/components/pantanal'
 import { cn } from '@/lib/utils'
 import '@/pantanal.css'
 
@@ -771,9 +771,33 @@ function TelaExportar({ projeto }: { projeto: Projeto }) {
 
 /* ---------------- Minha IA (BYOK) ---------------- */
 
-const CAMPOS_CHAVE: { id: 'anthropic' | 'openai'; label: string; ondeConseguir: string }[] = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', ondeConseguir: 'console.anthropic.com → API Keys' },
-  { id: 'openai', label: 'OpenAI (GPT)', ondeConseguir: 'platform.openai.com → API keys' },
+const CAMPOS_CHAVE: { id: 'anthropic' | 'openai'; label: string; ondeConseguir: string; passos: string[] }[] = [
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    ondeConseguir: 'console.anthropic.com → API Keys',
+    passos: [
+      'Acesse console.anthropic.com e crie uma conta (ou entre com a que já tem). É diferente da conta do app Claude — aqui é a conta de desenvolvedor.',
+      'No menu lateral, clique em "API Keys".',
+      'Clique em "Create Key", dê um nome (ex.: "educagente") e confirme.',
+      'Copie a chave (começa com sk-ant-...) — ela só aparece uma vez, guarde antes de fechar.',
+      'Se pedir, adicione um método de pagamento em Billing — sem crédito, a chave existe mas as chamadas falham.',
+      'Volte aqui, cole a chave no campo e clique em "Testar e salvar".',
+    ],
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI (GPT)',
+    ondeConseguir: 'platform.openai.com → API keys',
+    passos: [
+      'Acesse platform.openai.com e crie uma conta (ou entre com a que já tem). É diferente da conta do ChatGPT — a cobrança da API é separada.',
+      'No menu, vá em "API keys" (ícone de chave).',
+      'Clique em "Create new secret key", dê um nome e confirme.',
+      'Copie a chave (começa com sk-...) — ela só aparece uma vez, guarde antes de fechar.',
+      'Adicione um método de pagamento em Billing — sem crédito, a chave existe mas as chamadas falham.',
+      'Volte aqui, cole a chave no campo e clique em "Testar e salvar".',
+    ],
+  },
 ]
 
 function PainelMinhaIA() {
@@ -784,7 +808,7 @@ function PainelMinhaIA() {
         Trate-a como uma senha: não a compartilhe.
       </Aviso>
       {CAMPOS_CHAVE.map((c) => (
-        <CampoChave key={c.id} provider={c.id} label={c.label} ondeConseguir={c.ondeConseguir} />
+        <CampoChave key={c.id} provider={c.id} label={c.label} ondeConseguir={c.ondeConseguir} passos={c.passos} />
       ))}
       <Cartao>
         <p className="font-semibold text-[var(--cor-primaria)]">Ollama</p>
@@ -801,14 +825,17 @@ function CampoChave({
   provider,
   label,
   ondeConseguir,
+  passos,
 }: {
   provider: 'anthropic' | 'openai'
   label: string
   ondeConseguir: string
+  passos: string[]
 }) {
   const [valor, setValor] = useState(() => obterChave(provider) ?? '')
   const [testando, setTestando] = useState(false)
   const [resultado, setResultado] = useState<{ tom: 'ok' | 'erro'; msg: string } | null>(null)
+  const [ajudaAberta, setAjudaAberta] = useState(false)
   const salva = !!obterChave(provider)
 
   async function testarESalvar() {
@@ -846,7 +873,24 @@ function CampoChave({
           </span>
         )}
       </div>
-      <p className="mt-1 text-xs text-[var(--cor-texto)]/50">Pegue a sua em: {ondeConseguir}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-xs text-[var(--cor-texto)]/50">Pegue a sua em: {ondeConseguir}</p>
+        <button
+          onClick={() => setAjudaAberta(true)}
+          className="flex items-center gap-1 text-xs font-semibold text-[var(--cor-prompt)] underline-offset-2 hover:underline"
+        >
+          <HelpCircle className="size-3.5" /> Como conseguir?
+        </button>
+      </div>
+      <JanelaInfo aberto={ajudaAberta} onFechar={() => setAjudaAberta(false)} titulo={`Como conseguir sua chave ${label}`}>
+        <ol className="list-decimal space-y-2.5 pl-5">
+          {passos.map((p, i) => (
+            <li key={i} className="leading-relaxed">
+              {p}
+            </li>
+          ))}
+        </ol>
+      </JanelaInfo>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           type="password"

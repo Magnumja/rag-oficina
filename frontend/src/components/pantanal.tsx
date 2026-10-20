@@ -4,8 +4,8 @@
  * ou classe daqui entra na Início ou nas Etapas da Oficina RAG.
  */
 import type { ComponentType, ReactNode } from 'react'
-import { motion } from 'motion/react'
-import { AlertTriangle, Check, CheckCircle2 } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { AlertTriangle, Check, CheckCircle2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function Cartao({ className, children }: { className?: string; children: ReactNode }) {
@@ -190,5 +190,59 @@ export function BotaoSelecao({
       <Icone className="size-5" />
       {rotulo}
     </motion.button>
+  )
+}
+
+/** Janela (modal) de instrução — ex.: "como conseguir sua API key". Fecha clicando
+ * fora, no X ou em Esc. */
+export function JanelaInfo({
+  aberto,
+  onFechar,
+  titulo,
+  children,
+}: {
+  aberto: boolean
+  onFechar: () => void
+  titulo: string
+  children: ReactNode
+}) {
+  return (
+    <AnimatePresence>
+      {aberto && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={onFechar}
+          onKeyDown={(e) => e.key === 'Escape' && onFechar()}
+          role="presentation"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.97 }}
+            transition={{ type: 'spring', bounce: 0.25, duration: 0.4 }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={titulo}
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[var(--pantanal-raio-selecao)] border-[length:var(--pantanal-borda)] border-[var(--cor-primaria)]/25 bg-[var(--cor-fundo)] p-6 shadow-[0_8px_0_var(--cor-primaria)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold text-[var(--cor-primaria)]">{titulo}</h2>
+              <button
+                onClick={onFechar}
+                aria-label="Fechar"
+                className="shrink-0 rounded-full p-1 text-[var(--cor-primaria)]/60 hover:bg-[var(--cor-primaria)]/10 hover:text-[var(--cor-primaria)]"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="mt-3 text-sm text-[var(--cor-texto)]">{children}</div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
