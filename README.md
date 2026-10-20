@@ -31,7 +31,13 @@ Cada projeto escolhe um provedor de IA na criação (fica fixo depois):
 - **Anthropic** / **OpenAI** — BYOK (*bring your own key*): o aluno cola a própria chave na tela
   **"Minha IA"** (botão no topo da área Projeto). A chave fica só no `localStorage` do navegador,
   nunca é enviada ao nosso banco nem aparece em log — viaja só por requisição, direto pro provedor.
-  Um botão "Testar e salvar" valida a chave antes de guardá-la.
+  Um botão "Testar e salvar" valida a chave antes de guardá-la, e um botão **"Como conseguir?"**
+  abre o passo a passo de onde criar a chave em cada provedor.
+
+Não existe "Entrar com Anthropic/OpenAI" por OAuth2 — nenhum dos dois provedores expõe um fluxo
+público de terceiros que delegue uso/créditos da conta (a OpenAI tem "Sign in with ChatGPT", mas é
+só identidade — `openid profile email`, nunca um token pra chamar a API). Colar a chave é o caminho
+real disponível hoje.
 
 ## Rodar
 
@@ -127,6 +133,10 @@ O botão **Demonstração em 1 clique** roda as três etapas com os exemplos pro
 ## Como funciona
 
 - `frontend/`: React + Vite + Tailwind.
+  - `src/App.tsx`: cabeçalho compartilhado (logo "Educagente", navegação) e a página Início. A barra
+    tem 3 itens — Início, **Oficina RAG** (menu suspenso com Etapa 1-3, Comparar e Pesquisa) e
+    Projeto — mas a paleta azul/amarelo/rosa/verde do cabeçalho é a mesma da Início (apresentação à
+    banca) e não foi alterada de propósito, mesmo com a aba Projeto usando a paleta Pantanal.
   - Início + Etapas (Oficina RAG): componentes do [unlumen UI](https://ui.unlumen.com)
     (`src/components/unlumen-ui/`: ShimmeringText, GlowingBadge, ThemeSwitch, ShimmerSkeleton,
     CountUp, TextReveal) e `src/components/slide.tsx`, `src/telas.tsx`.
