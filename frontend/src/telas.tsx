@@ -20,7 +20,19 @@ import { api, type Etapa, type GrupoComparacao, type Resposta } from '@/lib/api'
 import { COR, ETAPAS, EXEMPLO_JSON, PERGUNTAS_SUGERIDAS, PROMPT_GPT } from '@/lib/conteudo'
 import { cn } from '@/lib/utils'
 
-export type Tela = 'inicio' | 'etapa1' | 'etapa2' | 'etapa3' | 'comparar' | 'pesquisa'
+export type Tela =
+  | 'inicio'
+  | 'etapa1'
+  | 'etapa2'
+  | 'etapa3'
+  | 'comparar'
+  | 'pesquisa'
+  | 'projeto-lista'
+  | 'projeto-prompt'
+  | 'projeto-conhecimento'
+  | 'projeto-conversar'
+  | 'projeto-comparar'
+  | 'projeto-exportar'
 
 /** Roda as três etapas com os exemplos prontos e a mesma pergunta. */
 export async function rodarDemonstracao(progresso: (msg: string) => void) {
@@ -28,10 +40,10 @@ export async function rodarDemonstracao(progresso: (msg: string) => void) {
   progresso('Etapa 1: perguntando sem RAG…')
   await api.perguntar(1, pergunta)
   progresso('Etapa 2: enviando dados falsos ao RAG…')
-  await api.enviarJson(2, EXEMPLO_JSON[2])
+  await api.enviarArquivo(2, new File([EXEMPLO_JSON[2]], 'exemplo-etapa2.txt', { type: 'text/plain' }))
   await api.perguntar(2, pergunta)
   progresso('Etapa 3: enviando dados corretos ao RAG…')
-  await api.enviarJson(3, EXEMPLO_JSON[3])
+  await api.enviarArquivo(3, new File([EXEMPLO_JSON[3]], 'exemplo-etapa3.txt', { type: 'text/plain' }))
   await api.perguntar(3, pergunta)
 }
 
@@ -131,7 +143,7 @@ export function EtapaTela({ etapa, irPara }: { etapa: Etapa; irPara: (t: Tela) =
       </Cartao>
 
       <div className={cn('grid gap-6', etapa > 1 ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : 'lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>
-        {etapa > 1 && <PainelJson etapa={etapa as 2 | 3} trechos={trechos} onEnviado={setTrechos} />}
+        {etapa > 1 && <PainelArquivo etapa={etapa as 2 | 3} trechos={trechos} onEnviado={setTrechos} />}
 
         <section className="min-w-0 space-y-4">
           <Cartao className={cn('p-4', bloqueado && 'opacity-60')}>
@@ -262,7 +274,7 @@ function Observar({ etapa }: { etapa: Etapa }) {
   )
 }
 
-function PainelJson({
+function PainelArquivo({
   etapa,
   trechos,
   onEnviado,
@@ -271,16 +283,16 @@ function PainelJson({
   trechos: number
   onEnviado: (n: number) => void
 }) {
-  const [texto, setTexto] = useState('')
+  const [arquivo, setArquivo] = useState<File | null>(null)
   const [estado, setEstado] = useState<{ tipo: 'ok' | 'erro'; msg: string; exemplos?: string[] } | null>(null)
   const [enviando, setEnviando] = useState(false)
   const cor = ETAPAS[etapa].cor
 
-  async function enviar() {
+  async function enviar(alvo: File) {
     setEstado(null)
     setEnviando(true)
     try {
-      const r = await api.enviarJson(etapa, extrairJson(texto))
+      const r = await api.enviarArquivo(etapa, alvo)
       onEnviado(r.trechos)
       setEstado({ tipo: 'ok', msg: `${r.trechos} trechos guardados no banco vetorial. Agora faça as perguntas.`, exemplos: r.exemplos })
     } catch (err) {
@@ -306,31 +318,32 @@ function PainelJson({
 
       <Cartao>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Rotulo className={COR[cor].texto}>2 · Cole o JSON e envie ao RAG</Rotulo>
+          <Rotulo className={COR[cor].texto}>2 · Envie um PDF ou TXT ao RAG</Rotulo>
           <button
-            onClick={() => setTexto(EXEMPLO_JSON[etapa])}
+            onClick={() => enviar(new File([EXEMPLO_JSON[etapa]], `exemplo-etapa${etapa}.txt`, { type: 'text/plain' }))}
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <Wand2 className="size-3.5" /> usar exemplo {etapa === 2 ? 'falso' : 'correto'}
           </button>
         </div>
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          spellCheck={false}
-          rows={9}
-          aria-label="JSON"
-          placeholder={'{\n  "turma": "...",\n  "aulas": [ ... ]\n}'}
-          className="mt-3 w-full resize-y rounded-lg border-[1.5px] bg-background p-3 font-mono text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring/40"
-        />
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-[1.5px] border-dashed bg-background p-6 text-sm text-muted-foreground hover:border-foreground/40">
+          <Upload className="size-4" />
+          {arquivo ? arquivo.name : 'Escolher arquivo PDF ou TXT'}
+          <input
+            type="file"
+            accept=".pdf,.txt"
+            className="sr-only"
+            onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+          />
+        </label>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Database className="size-3.5" />
             {trechos > 0 ? `${trechos} trechos na coleção desta etapa` : 'Coleção vazia'}
           </span>
-          <BotaoPrimario onClick={enviar} disabled={!texto.trim() || enviando}>
+          <BotaoPrimario onClick={() => arquivo && enviar(arquivo)} disabled={!arquivo || enviando}>
             <Upload className="size-4" />
-            {enviando ? 'Dividindo em trechos…' : trechos > 0 ? 'Substituir dados' : 'Enviar ao RAG'}
+            {enviando ? 'Extraindo texto…' : trechos > 0 ? 'Substituir dados' : 'Enviar ao RAG'}
           </BotaoPrimario>
         </div>
         {estado && (
@@ -350,12 +363,6 @@ function PainelJson({
       </Cartao>
     </section>
   )
-}
-
-/** Aceita o texto do GPT mesmo com ```json ... ``` em volta. */
-function extrairJson(texto: string) {
-  const bloco = texto.match(/```(?:json)?\s*([\s\S]*?)```/)
-  return (bloco ? bloco[1] : texto).trim()
 }
 
 function CartaoResposta({ r, compacto, abertoInicial }: { r: Resposta; compacto?: boolean; abertoInicial?: boolean }) {

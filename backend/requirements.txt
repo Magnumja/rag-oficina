@@ -1,5 +1,10 @@
 fastapi
 uvicorn[standard]
-chromadb
+python-multipart
 anthropic
+openai
+ollama
+scikit-learn
+numpy
+pypdf
 python-dotenv
