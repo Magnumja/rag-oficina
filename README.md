@@ -67,39 +67,34 @@ nunca passa pelo `.env` nem pelo banco.
 A API roda em container; o Ollama fica no **host**, não containerizado. O frontend também roda
 fora do container (ele não precisa de Docker).
 
-1. **Suba o Ollama no host escutando em todas as interfaces** — por padrão o Ollama só aceita
-   conexões de `127.0.0.1`, e o container não alcança isso. Se você já tem um `ollama serve` rodando
-   assim, pare e suba de novo com a variável:
-   ```bash
-   pkill -f "ollama serve"
-   OLLAMA_HOST=0.0.0.0:11434 ollama serve &
-   ```
-   Isso expõe a porta 11434 na sua rede local enquanto o processo ficar assim — depois de testar,
-   volte ao normal com `pkill -f "ollama serve" && ollama serve &` (sem a variável).
-
-2. **Garanta os modelos baixados** (uma vez):
+1. **Garanta os modelos baixados** (uma vez):
    ```bash
    ollama pull bge-m3        # embedding, sempre necessário
    ollama pull llama3.2:1b   # só se for usar MODEL_PROVIDER=ollama no chat
    ```
 
-3. **Configure `backend/.env`** (copie de `backend/.env.example` se ainda não existir) e escolha o
+2. **Configure `backend/.env`** (copie de `backend/.env.example` se ainda não existir) e escolha o
    provedor de chat (`MODEL_PROVIDER=ollama`, `anthropic` + `ANTHROPIC_API_KEY`, ou `openai` +
    `OPENAI_API_KEY`) — isso é só o fallback de demonstração/turma da Oficina RAG; no Projeto, cada
    aluno normalmente usa a própria chave via "Minha IA".
 
-4. **Suba a API em container:**
+3. **Suba tudo:**
    ```bash
-   docker compose up --build -d
+   ./docker-up.sh
    ```
-   Ela sobe em `http://localhost:8000` e acessa o Ollama do host via
-   `http://host.docker.internal:11434` (já configurado no `docker-compose.yml`, inclusive o
-   `extra_hosts` necessário no Linux). Confirme com:
+   Esse script chama `ollama.sh` (garante o Ollama do host escutando em `0.0.0.0`, já que por
+   padrão ele só aceita conexões de `127.0.0.1` e o container não alcança isso — idempotente, não
+   mexe em nada se já estiver certo) e depois `docker compose up --build -d`. A API sobe em
+   `http://localhost:8000`, acessando o Ollama do host via `http://host.docker.internal:11434`
+   (já configurado no `docker-compose.yml`, inclusive o `extra_hosts` necessário no Linux).
+   Confirme com:
    ```bash
    curl http://localhost:8000/api/saude
    ```
+   Pra só garantir o Ollama acessível sem subir a API (ex.: rodando `./iniciar.sh` em vez de
+   Docker), chame `./ollama.sh` sozinho.
 
-5. **Suba o frontend** (fora do Docker):
+4. **Suba o frontend** (fora do Docker):
    ```bash
    cd frontend && npm install && npm run dev
    ```
@@ -109,9 +104,9 @@ fora do container (ele não precisa de Docker).
 Para derrubar tudo: `docker compose down` (API) + `Ctrl+C` no terminal do `npm run dev` (frontend).
 
 **Problema comum:** se o upload de documento (etapa 2/3) der erro 502/500 mencionando
-`ConnectionError`/"Failed to connect to Ollama", é quase sempre o passo 1 — o Ollama do host não
-está escutando em `0.0.0.0`. Confirme com `ss -tlnp | grep 11434`: se aparecer só `127.0.0.1:11434`
-em vez de `*:11434` ou `0.0.0.0:11434`, repita o passo 1.
+`ConnectionError`/"Failed to connect to Ollama", é quase sempre o Ollama do host reiniciado sem a
+variável (acontece depois de um reboot, por exemplo) — rode `./ollama.sh` de novo, ele detecta e
+corrige sozinho.
 
 ### Usar no laboratório
 
